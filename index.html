@@ -333,6 +333,14 @@ body::after{background:radial-gradient(circle,var(--g2),transparent 65%);bottom:
 .rw-money.teaser .tz{flex:1;min-width:0;display:flex;flex-direction:column}
 .rw-money.teaser .tz span{font-weight:700} .rw-money.teaser .tz b{font:800 1.15rem var(--display)}
 .rw-money.teaser small{font-size:13px;color:var(--muted)}
+.typo{margin:4px 0 0;font-size:14px;color:var(--muted)}
+.appeal{margin:6px 0;border:1px dashed var(--g1);background:transparent;color:var(--ink);font:700 14px var(--body);padding:8px 12px;border-radius:10px;cursor:pointer}
+.appeal:hover{background:rgba(124,92,255,.12)}
+.bookbox{display:flex;flex-direction:column;gap:10px;margin-top:8px;text-align:left}
+.bookbox p{margin:0;font-size:14px;color:var(--muted)}
+.bookbox .btn{background:linear-gradient(120deg,var(--g1),var(--g2));color:#fff}
+.bookbox .btn:disabled{opacity:.55;cursor:default}
+.booked{margin:6px 0 0;font-weight:700;color:var(--good)}
 </style>
 </head>
 <body>
@@ -1274,10 +1282,40 @@ function tnorm(s){
     .replace(/n't\b/g," not").replace(/'m\b/g," am").replace(/'re\b/g," are").replace(/'ll\b/g," will").replace(/'ve\b/g," have")
     .replace(/[.,!?;:"“”„«»()–—]/g," ").replace(/-/g," ").replace(/\s+/g," ").trim();
 }
+/* Tippfehler-Toleranz: kleine Vertipper zählen als richtig, aber keine Grammatik-Fehler.
+   Nicht toleriert: andere Endung (swim/swims, play/played), kurze Wörter und leicht verwechselbare Wörter (where/were, their/there). */
+const NOFUZZ=new Set("a an the is are am was were be been has have had do does did go goes went gone come comes came get gets got where were wear who how what when why which whose there their they then than this these those that of off to too two in on at it its by buy for four from form his her he she we us our and not no now know new knew live lives life leave quite quiet lose loose see sea write right ein eine einen einem einer der die das den dem des ist sind war hat haben".split(" "));
+let lastFuzzy=null;
+function dlev(a,b){
+  const d=[];for(let i=0;i<=a.length;i++){d[i]=[i];for(let j=1;j<=b.length;j++)d[i][j]=i?0:j}
+  for(let i=1;i<=a.length;i++)for(let j=1;j<=b.length;j++){
+    const c=a[i-1]===b[j-1]?0:1;d[i][j]=Math.min(d[i-1][j]+1,d[i][j-1]+1,d[i-1][j-1]+c);
+    if(i>1&&j>1&&a[i-1]===b[j-2]&&a[i-2]===b[j-1])d[i][j]=Math.min(d[i][j],d[i-2][j-2]+1);
+  }
+  return d[a.length][b.length];
+}
+function tokTypo(u,e){
+  if(u===e)return 0;
+  if(NOFUZZ.has(u)||NOFUZZ.has(e)||e.length<4||/\d/.test(e))return 99;
+  const[sh,lo]=u.length<e.length?[u,e]:[e,u];
+  if(lo.startsWith(sh)&&/^(s|es|ies|ing|ed|d|er|est|ly|n|en|e)$/.test(lo.slice(sh.length)))return 99; // Endung fehlt oder ist zu viel: Grammatik
+  if(/ing$/.test(e)&&/ing$/.test(u))return 99;                  // -ing-Schreibung (swimming, making) ist selbst Lernstoff
+  const s=x=>x.replace(/(ing|ed|es|s|d)$/,"");if(u.slice(-2)!==e.slice(-2)&&s(u)===s(e))return 99; // andere Endung
+  const d=dlev(u,e);return d<=(e.length<=7?1:2)?d:99;
+}
+function fuzzyEq(u,a){
+  const U=u.split(" "),A=a.split(" ");if(U.length!==A.length)return false;
+  let tot=0;for(let i=0;i<U.length;i++){const d=tokTypo(U[i],A[i]);if(d>=99)return false;tot+=d}
+  return tot>0&&tot<=Math.max(1,Math.floor(A.length/4));
+}
+const sVar=x=>[x,x.replace(/'s\b/g," is"),x.replace(/'s\b/g," has")];
 function judgeText(input,exp){
+  lastFuzzy=null;
   const u=tnorm(input);if(!u||!exp.length)return false;
-  if(exp.some(alts=>alts.some(a=>tnorm(a)===u)))return true;
+  const UV=sVar(u);
+  if(exp.some(alts=>alts.some(a=>{const av=sVar(tnorm(a));return UV.some(x=>av.includes(x))})))return true;
   if(exp.length>1)return exp.every(alts=>alts.some(a=>(" "+u+" ").includes(" "+tnorm(a)+" ")));
+  for(const alts of exp)for(const a of alts){const av=sVar(tnorm(a));if(UV.some(x=>av.some(y=>fuzzyEq(x,y)))){lastFuzzy=a;return true}}
   return false;
 }
 function diagnoseText(input,exp,mist){
@@ -2104,7 +2142,8 @@ function diagnoseCode(input,exp,mist){
   if(exp.length>1)return[`Es werden mehrere Antworten erwartet. Richtig wäre: <b>${exp.map(a=>escH(a[0])).join(" · ")}</b>`];
   return[`Richtig wäre: <b>${escH(best)}</b>. Geh die Lösung unten Zeile für Zeile durch und vergleich sie mit deinem Weg.`];
 }
-function judgeAny(v,exp){return mt.lang==="en"||mt.lang==="de"?judgeText(v,exp):mt.lang==="code"?judgeCode(v,exp):judge(v,exp)}
+const EN_LIKE=()=>mt&&(mt.lang==="en"||mt.lang==="de");
+function judgeAny(v,exp){lastFuzzy=null;return mt.lang==="en"||mt.lang==="de"?judgeText(v,exp):mt.lang==="code"?judgeCode(v,exp):judge(v,exp)}
 function diagAny(v,exp,m){return mt.lang==="en"||mt.lang==="de"?diagnoseText(v,exp,m):mt.lang==="code"?diagnoseCode(v,exp,m):diagnose(v,exp,m)}
 
 /* Englisch-Kurztest: Vokabeln Unit 1, S. 285 ff. */
@@ -2850,7 +2889,7 @@ function drawTasks(){
       const EN=mt.lang==="en"||mt.lang==="de";
       if(!exp.length){fb.className="fb";fb.innerHTML="Hier gibt es nicht die eine richtige Lösung. Vergleich deine Antwort mit der <b>Musterlösung</b> unten.";showSol(true);return}
       const CODE=mt.lang==="code",sv=EN||CODE?null:sameValue(v,exp);
-      if(judgeAny(v,exp)||sv==="ok"){fb.className="fb good";fb.textContent="✓ Richtig!";setMark("ok");RW.task(mt.id,el.dataset.id,true)}
+      if(judgeAny(v,exp)||sv==="ok"){fb.className="fb good";fb.textContent=lastFuzzy&&EN_LIKE()?`✓ Richtig! Kleiner Tippfehler, genau geschrieben: „${lastFuzzy}“`:"✓ Richtig!";setMark("ok");RW.task(mt.id,el.dataset.id,true)}
       else if(sv==="unreduced"){fb.className="fb bad";fb.innerHTML=`<b>Fast richtig!</b> Der Wert stimmt, aber der Bruch ist <b>nicht vollständig gekürzt</b>. In der Arbeit gibt das Punktabzug. Teil Zähler und Nenner durch die größte gemeinsame Zahl.`;showSol(true)}
       else{const d=diagAny(v,exp,item[4]);fb.className="fb bad";fb.innerHTML=`<b>✗ Leider falsch. Wo liegt der Fehler?</b><ul>${d.map(x=>`<li>${x}</li>`).join("")}</ul><span class="fbnote">${EN||CODE?"Die Lösung mit Erklärung":"Den ganzen Rechenweg"} siehst du unten. Wenn deine Antwort nur anders geschrieben ist, tipp auf „Hatte ich richtig“.</span>`;showSol(true)}
     };
@@ -2964,7 +3003,7 @@ function finishExam(timeout){
     if(x.open){r.k2="open";return r}
     if(!v.trim()){r.diag=["Nicht beantwortet."];return r}
     const sv=EN||mt.lang==="code"?null:sameValue(v,exp);
-    if(judgeAny(v,exp)||sv==="ok"){r.got=x.p;r.k2="g"}
+    if(judgeAny(v,exp)||sv==="ok"){r.got=x.p;r.k2="g";if(lastFuzzy&&EN)r.typo=lastFuzzy}
     else if(sv==="unreduced"){r.got=x.p/2;r.k2="s";r.diag=["Wert stimmt, aber nicht vollständig gekürzt (halbe Punkte)."]}
     else{
       const sh=partShare(v,exp,EN);
@@ -3314,12 +3353,32 @@ const FACH_COL={"Englisch":["#3b82f6","#06b6d4"],"Mathe":["#8b5cf6","#ec4899"],"
     const rows=tList.map((w,i)=>check(tAns[i],ans(w),w.c==="Sätze")),g=rows.filter(r=>r.k==="g").length,sm=rows.filter(r=>r.k==="s").length;
     RW.vtest(Math.round((g+sm/2)/rows.length*100),vPrefix?"englisch-kt":"spanisch");
   };
+  const APPEALS=3;
   const _der=drawExamResult;drawExamResult=function(){
     _der();
-    if(!exam||!exam.rows||exam.rewarded)return;
-    const rows=exam.rows;if(rows.some(r=>r.k2==="open"&&r.self==null))return;
-    const total=rows.reduce((a,r)=>a+r.x.p,0),gotP=rows.reduce((a,r)=>a+(r.k2==="open"?r.self*r.x.p:r.got),0);
-    const pct=Math.round(gotP/total*100);exam.rewarded=true;RW.exam(mt.id,noteFor(pct)[1],pct);
+    if(!exam||!exam.rows||exam.cheated)return;
+    const rows=exam.rows,body=$("m-body"),tasks=body.querySelectorAll(":scope > .task");
+    exam.appeals=exam.appeals||0;
+    rows.forEach((r,k)=>{
+      const el=tasks[k];if(!el)return;
+      if(r.typo)el.querySelector(".exyou")?.insertAdjacentHTML("afterend",`<p class="typo">✏️ Kleiner Tippfehler, zählt trotzdem. Genau geschrieben: „${String(r.typo).replace(/</g,"&lt;")}“</p>`);
+      if(r.appealed)el.querySelector(".exyou")?.insertAdjacentHTML("afterend",`<p class="typo">✋ Als sinngemäß richtig gewertet.</p>`);
+      const sentence=(expected(r.x.a)[0]||[""]).some(x=>tnorm(x).split(" ").length>=4);
+      if(!exam.rewarded&&sentence&&(r.k2==="r"||r.k2==="s")&&r.v.trim()&&exam.appeals<APPEALS){
+        const b=document.createElement("button");b.type="button";b.className="appeal";b.textContent="✋ War sinngemäß richtig";
+        b.onclick=()=>{if(exam.appeals>=APPEALS||exam.rewarded)return;r.k2="g";r.got=r.x.p;r.diag=null;r.appealed=1;exam.appeals++;drawExamResult()};
+        el.querySelector(".steps")?.before(b);
+      }
+    });
+    const openLeft=rows.some(r=>r.k2==="open"&&r.self==null);
+    const total=rows.reduce((a,r)=>a+r.x.p,0),gotP=rows.reduce((a,r)=>a+(r.k2==="open"?(r.self||0)*r.x.p:r.got),0);
+    const pct=Math.round(gotP/total*100),note=noteFor(pct)[1];
+    const card=body.querySelector(".grade-card");
+    if(exam.rewarded){card?.insertAdjacentHTML("beforeend",`<p class="booked">✅ Note ${exam.bookedNote} ist eingetragen.</p>`);return}
+    card?.insertAdjacentHTML("beforeend",`<div class="bookbox">
+        <p>Ein Satz war richtig, nur anders formuliert? Tipp unten bei bis zu <b>${APPEALS} Sätzen</b> auf „✋ War sinngemäß richtig“ (noch ${APPEALS-exam.appeals} frei). Sei ehrlich, sonst lernst du nichts.</p>
+        <button class="btn" type="button" id="ex-book" ${openLeft?"disabled":""}>${openLeft?"Erst die Erklär-Aufgaben bewerten":`✅ Note ${note} eintragen`}</button></div>`);
+    const bb=$("ex-book");if(bb)bb.onclick=()=>{if(exam.rewarded)return;exam.rewarded=true;exam.bookedNote=note;RW.exam(mt.id,note,pct);drawExamResult()};
   };
 }
 
