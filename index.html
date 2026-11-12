@@ -314,6 +314,19 @@ body::after{background:radial-gradient(circle,var(--g2),transparent 65%);bottom:
 .rw-stats span.bad{border-color:var(--bad);color:var(--bad)}
 .lu.bad h2{background:none;color:var(--bad)}
 @media (prefers-reduced-motion:reduce){.grade.n7,.rw-money .coin{animation:none!important}}
+.rw-acct{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:14px;color:var(--muted);flex-wrap:wrap}
+.rw-acct b{color:var(--ink)} .rw-acct small{font-size:12px}
+.btn.sm{padding:8px 12px;font-size:14px;border-radius:10px;background:linear-gradient(120deg,var(--g1),var(--g2));color:#fff}
+.linkbtn{border:0;background:none;color:var(--muted);font:700 13px var(--body);text-decoration:underline;cursor:pointer;padding:4px}
+.lu.login{display:flex;flex-direction:column;gap:10px;text-align:left}
+.lu.login .lu-e,.lu.login h2,.lu.login>p{text-align:center}
+.lu.login p{margin:0}
+.lu.login label{display:flex;flex-direction:column;gap:4px;font-weight:700;font-size:14px}
+.lu.login textarea,.lu.login input{font:16px var(--body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:10px 12px;resize:none;width:100%}
+.lu.login textarea:focus,.lu.login input:focus{outline:2px solid var(--g1);outline-offset:1px}
+.lg-err{color:var(--bad);font-weight:700;font-size:14px;min-height:1px}
+.lg-small{font-size:12px;color:var(--muted);text-align:center}
+.lu .btn.ghost{background:none;color:var(--muted);box-shadow:none;padding:8px}
 </style>
 </head>
 <body>
@@ -3002,7 +3015,10 @@ $("m-reset").onclick=()=>{store.set("math:"+mt.id,{});drawTasks()};
 
 /* Belohnungen: XP, Level, Serie, Tagesziel, Abzeichen, Guthaben, Anti-Schummel */
 const RW=(()=>{
-  const K="rw:v1",GOAL=50,LC=52.6,LG=1.0284,TIME_CAP=720,PENALTY=150;
+  const K="rw:v1",KA="rw:acct",GOAL=50,LC=52.6,LG=1.0284,TIME_CAP=720,PENALTY=150;
+  const API=/^(127\.0\.0\.1|localhost)$/.test(location.hostname)?"http://127.0.0.1:8790/api":"https://46-225-169-155.sslip.io/api";
+  let acct=null;try{acct=JSON.parse(localStorage.getItem("bk:acct"))}catch(e){}
+  const saveAcct=()=>{try{acct?localStorage.setItem("bk:acct",JSON.stringify(acct)):localStorage.removeItem("bk:acct")}catch(e){}};
   /* Guthaben in Cent je Level-Stufe: zusammen genau 5 € bei Level 200 */
   /* klein anfangen, später mehr: 6, 8, 10 … 44 ct */
   const PAY=Array.from({length:20},(_,k)=>[10*(k+1),6+2*k]);
@@ -3012,15 +3028,93 @@ const RW=(()=>{
   const h53=(str,seed=0)=>{let a=0xdeadbeef^seed,b=0x41c6ce57^seed;for(let i=0;i<str.length;i++){const c=str.charCodeAt(i);a=Math.imul(a^c,2654435761);b=Math.imul(b^c,1597334677)}
     a=Math.imul(a^(a>>>16),2246822507)^Math.imul(b^(b>>>13),3266489909);b=Math.imul(b^(b>>>16),2246822507)^Math.imul(a^(a>>>13),3266489909);return(4294967296*(2097151&b)+(a>>>0)).toString(36)};
   const sign=o=>h53("bk|"+JSON.stringify(o)+"|study",1091);
-  let s;
-  try{
-    const raw=JSON.parse(localStorage.getItem(K));
-    if(raw){const{sig,...rest}=raw;s=Object.assign({},blank,rest);
-      if(sig===undefined?s.xp>2000:sig!==sign(rest)){s.tampered=1;s.flags.tamperedAt=Date.now()}}
-    else s={...blank};
-  }catch(e){s={...blank}}
-  const save=()=>{try{const{sig,...rest}=s;localStorage.setItem(K,JSON.stringify({...rest,sig:sign(rest)}))}catch(e){}};
+  const fresh=o=>{const x=Object.assign({},JSON.parse(JSON.stringify(blank)),o||{});delete x.sig;return x};
+  const loadLocal=key=>{
+    try{
+      const raw=JSON.parse(localStorage.getItem(key));if(!raw)return fresh();
+      const{sig,...rest}=raw,x=fresh(rest);
+      if(sig===undefined?x.xp>2000:sig!==sign(rest)){x.tampered=1;x.flags.tamperedAt=Date.now()}
+      return x;
+    }catch(e){return fresh()}
+  };
+  let s=loadLocal(acct?KA:K);
+  const saveLocal=()=>{try{const{sig,...rest}=s;localStorage.setItem(acct?KA:K,JSON.stringify({...rest,sig:sign(rest)}))}catch(e){}};
+  /* Konto: Spielstand auf dem Server */
+  let pushT=null,pushing=false;
+  async function api(path,method="GET",body,keep){
+    const r=await fetch(API+path,{method,keepalive:!!keep,headers:{"Content-Type":"application/json",...(acct?{Authorization:"Bearer "+acct.token}:{})},body:body?JSON.stringify(body):undefined});
+    const j=await r.json().catch(()=>({}));return{r,j};
+  }
+  function adopt(j){s=fresh(j.state);acct.rev=j.rev;acct.paid=j.paid||0;acct.dirty=0;saveAcct();saveLocal();panel()}
+  function kicked(msg){acct=null;saveAcct();s=loadLocal(K);panel();if(msg)modal("🔒","Abgemeldet",msg,true)}
+  async function push(keep,imp){
+    if(!acct||pushing)return;pushing=true;clearTimeout(pushT);
+    try{
+      const{sig,...st}=s,{r,j}=await api("/state","PUT",{state:st,rev:acct.rev,import:imp?1:0},keep);
+      if(r.ok){acct.rev=j.rev;acct.paid=j.paid||0;acct.dirty=0;saveAcct();panel()}
+      else if(r.status===409){adopt(j);toast("🔄 Stand vom Konto übernommen")}
+      else if(r.status===401||r.status===403)kicked(j.error||"Bitte melde dich neu an.");
+    }catch(e){/* offline: später nochmal */}
+    pushing=false;
+  }
+  async function pull(){
+    if(!acct)return;
+    try{
+      const{r,j}=await api("/state");
+      if(r.status===401||r.status===403)return kicked(j.error||"Bitte melde dich neu an.");
+      if(!r.ok)return;
+      acct.name=j.name;acct.paid=j.paid||0;
+      if(acct.dirty&&j.rev===acct.rev)return push();
+      adopt(j);drawHome&&document.getElementById("home")&&!document.getElementById("home").hidden&&drawHome();
+    }catch(e){}
+  }
+  const save=()=>{saveLocal();if(acct){acct.dirty=1;saveAcct();clearTimeout(pushT);pushT=setTimeout(()=>push(),2500)}};
+  addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden"&&acct&&acct.dirty)push(true)});
+  addEventListener("online",()=>acct&&acct.dirty&&push());
+  setInterval(()=>{if(acct&&document.visibilityState==="visible")acct.dirty?push():pull()},60000);
   save();
+  async function login(l,p){
+    const r=await fetch(API+"/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({login:l,password:p})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(j.error||"Anmelden ging nicht.");
+    const guest=s;acct={token:j.token,name:j.name,rev:0,paid:0,dirty:0};saveAcct();
+    const g=await api("/state");
+    if(!g.r.ok){acct=null;saveAcct();throw new Error(g.j.error||"Konto konnte nicht geladen werden.")}
+    if(g.j.rev===0&&!g.j.state.xp&&guest.xp>0&&!guest.tampered){s=guest;acct.rev=0;saveLocal();await push(false,true)}
+    else adopt(g.j);
+    panel();drawHome();toast(`👋 <b>Hi ${j.name.replace(/</g,"")}!</b> Dein Fortschritt wird jetzt im Konto gespeichert.`,"gold");
+  }
+  async function logout(){
+    if(acct&&acct.dirty)await push();
+    try{await api("/logout","POST")}catch(e){}
+    try{localStorage.removeItem(KA)}catch(e){}
+    acct=null;saveAcct();s=loadLocal(K);panel();drawHome();
+  }
+  function loginDialog(){
+    document.getElementById("rw-modal")?.remove();
+    const m=document.createElement("div");m.id="rw-modal";
+    m.innerHTML=`<form class="lu login" role="dialog" aria-modal="true" aria-labelledby="lg-h">
+      <div class="lu-e">🔑</div><h2 id="lg-h">Anmelden</h2>
+      <p>Login und Passwort sind je 8 Wörter. Leerzeichen, Groß- und Kleinschreibung sind egal.</p>
+      <label>Login<textarea id="lg-l" rows="2" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="z. B. apfel boot …"></textarea></label>
+      <label>Passwort<input id="lg-p" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false" placeholder="8 Wörter"></label>
+      <p class="lg-err" id="lg-e" role="alert"></p>
+      <button class="btn" type="submit" id="lg-b">Anmelden</button>
+      <button class="btn ghost" type="button" id="lg-x">Abbrechen</button>
+      <p class="lg-small">Noch kein Konto? Frag den Ersteller der Seite, er legt dir eins an.</p></form>`;
+    const close=()=>m.remove();
+    m.onclick=e=>{if(e.target===m)close()};
+    document.body.append(m);
+    m.querySelector("#lg-x").onclick=close;
+    m.querySelector("form").onsubmit=async e=>{
+      e.preventDefault();const b=m.querySelector("#lg-b"),er=m.querySelector("#lg-e");
+      b.disabled=true;b.textContent="Prüfe …";er.textContent="";
+      try{await login(m.querySelector("#lg-l").value,m.querySelector("#lg-p").value);close();confetti(120)}
+      catch(err){er.textContent=err.message==="Failed to fetch"?"Keine Verbindung zum Server. Bist du online?":err.message;b.disabled=false;b.textContent="Anmelden"}
+    };
+    m.querySelector("#lg-l").focus();
+  }
+  if(acct)setTimeout(pull,300);
   const pad=n=>String(n).padStart(2,"0");
   const iso=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
   const today=()=>iso(new Date()),yday=()=>iso(new Date(Date.now()-864e5));
@@ -3089,9 +3183,11 @@ const RW=(()=>{
   function panel(){
     const el=document.getElementById("rw-panel");if(!el)return;
     const li=lvlInfo(s.xp),st=streakNow(),dx=s.days[today()]||0,got=BADGES.filter(b=>s.badges[b[0]]).length;
-    const c=s.tampered?0:cents(li.L),next=PAY.find(p=>li.L<p[0]);
+    const c=s.tampered||!acct?0:cents(li.L),next=PAY.find(p=>li.L<p[0]),paid=acct?acct.paid||0:0;
     let open=false,popen=false;try{open=localStorage.getItem("rwBadgesOpen")==="1";popen=localStorage.getItem("rwPayOpen")==="1"}catch(e){}
-    el.innerHTML=`<div class="rw-top">
+    el.innerHTML=`<div class="rw-acct">${acct?`<span>👤 <b>${String(acct.name||"").replace(/</g,"&lt;")}</b>${acct.dirty?' <small title="wird gleich gespeichert">· speichert …</small>':' <small>· im Konto gespeichert ✓</small>'}</span><button type="button" class="linkbtn" id="rw-out">Abmelden</button>`
+        :`<span>Ohne Konto: kein Guthaben, Fortschritt nur auf diesem Gerät.</span><button type="button" class="btn sm" id="rw-in">🔑 Anmelden</button>`}</div>
+      <div class="rw-top">
         <div class="lvl" style="--p:${li.p}" title="Level ${li.L}"><b>${li.L}</b></div>
         <div class="rw-who"><div class="rw-title">Level ${li.L} · ${li.title}</div>
           <div class="rw-bar"><i style="width:${li.p}%"></i></div>
@@ -3099,16 +3195,18 @@ const RW=(()=>{
         <div class="streak${st?"":" off"}" title="Tage am Stück gelernt"><span>🔥</span><b>${st}</b><small>${st===1?"Tag":"Tage"}</small></div>
       </div>
       ${s.tampered?`<div class="rw-cheat">🚨 <b>Schummler erkannt!</b> Die gespeicherten Daten wurden verändert. Dein Guthaben ist für immer gesperrt.</div>`:""}
-      <details class="rw-money"${popen?" open":""}><summary><span class="coin">💰</span><span>Guthaben <b>${euro(c)}</b></span><small>${s.tampered?"gesperrt":next?`Level ${next[0]} → +${next[1]} ct`:"alles freigeschaltet"}</small></summary>
+      <details class="rw-money"${popen?" open":""}><summary><span class="coin">💰</span><span>Guthaben <b>${acct?euro(Math.max(0,c-paid)):"–"}</b></span><small>${!acct?"nur mit Konto":s.tampered?"gesperrt":(paid?`${euro(paid)} schon ausgezahlt · `:"")+(next?`Level ${next[0]} → +${next[1]} ct`:"alles freigeschaltet")}</small></summary>
         <div class="paygrid">${PAY.map(([L,ct])=>`<span class="${li.L>=L&&!s.tampered?"on":""}"><b>Lvl ${L}</b>+${ct} ct</span>`).join("")}</div>
-        <p class="rw-fine">Bis Level 200 gibt es zusammen höchstens 5,00 €. Zum Auszahlen zeigst du diese Karte dem Ersteller der Seite. Wer schummelt (Probe-KA verlassen oder Daten ändern), verliert XP oder das ganze Guthaben.</p>
+        <p class="rw-fine">${acct?"":"<b>Guthaben gibt es nur mit Konto.</b> "}Bis Level 200 gibt es zusammen höchstens 5,00 €. Zum Auszahlen meldest du dich beim Ersteller der Seite, er sieht deinen Stand. Wer schummelt (Probe-KA verlassen oder Daten ändern), verliert XP oder das ganze Guthaben.</p>
       </details>
       <div class="rw-goal"><span>Tagesziel</span><div class="rw-bar sm"><i style="width:${Math.min(100,dx/GOAL*100)}%"></i></div><span>${Math.min(dx,GOAL)}/${GOAL} XP${dx>=GOAL?" ✓":""}</span></div>
       <div class="rw-stats"><span>✓ ${s.correct} ${s.correct===1?"Aufgabe":"Aufgaben"}</span><span>📚 ${s.words} ${s.words===1?"Vokabel":"Vokabeln"}</span><span>📝 ${s.exams} ${s.exams===1?"Probe-KA":"Probe-KAs"}</span><span>⏱️ ${Math.floor((s.mins[today()]||0)/60)} h ${(s.mins[today()]||0)%60} min heute</span>${s.cheats?`<span class="bad">🚨 ${s.cheats}× geschummelt</span>`:""}</div>
       <details class="rw-badges"${open?" open":""}><summary>🏅 Abzeichen <b>${got}/${BADGES.length}</b></summary>
         <div class="bgrid">${BADGES.map(([id,e,n,d])=>`<div class="badge${s.badges[id]?"":" off"}" title="${d}"><span>${e}</span><b>${n}</b><small>${d}</small></div>`).join("")}</div>
       </details>
-      ${s.xp?"":`<p class="rw-hint">Löse Aufgaben, lerne Vokabeln und schreib Probe-KAs. So sammelst du XP, steigst im Level auf und bekommst ab Level 10 echtes Guthaben. Dein Fortschritt bleibt auf diesem Gerät gespeichert.</p>`}`;
+      ${s.xp?"":`<p class="rw-hint">Löse Aufgaben, lerne Vokabeln und schreib Probe-KAs. So sammelst du XP, steigst im Level auf und bekommst ab Level 10 echtes Guthaben. ${acct?"Dein Fortschritt wird in deinem Konto gespeichert.":"Ohne Konto bleibt dein Fortschritt nur auf diesem Gerät."}</p>`}`;
+    el.querySelector("#rw-in")?.addEventListener("click",loginDialog);
+    el.querySelector("#rw-out")?.addEventListener("click",()=>{if(confirm("Abmelden? Dein Fortschritt bleibt im Konto gespeichert."))logout()});
     el.querySelector(".rw-badges").addEventListener("toggle",e=>{try{localStorage.setItem("rwBadgesOpen",e.target.open?"1":"0")}catch(_){}});
     el.querySelector(".rw-money").addEventListener("toggle",e=>{try{localStorage.setItem("rwPayOpen",e.target.open?"1":"0")}catch(_){}});
   }
@@ -3130,7 +3228,7 @@ const RW=(()=>{
     BADGES.forEach(([id,e,name,,ok],i)=>{if(!s.badges[id]&&ok()){s.badges[id]=d;setTimeout(()=>{toast(`${e} <b>Abzeichen:</b> ${name}`,"gold");confetti(70)},800+i*60)}});
     save();panel();
     if(after>before){
-      const gain=s.tampered?0:cents(after)-cents(before);
+      const gain=s.tampered||!acct?0:cents(after)-cents(before);
       setTimeout(()=>modal(gain?"💰":"🚀",`Level ${after}!`,`Du bist jetzt <b>${lvlInfo(s.xp).title}</b>.${gain?` Du hast <b>+${gain} ct Guthaben</b> bekommen, jetzt hast du ${euro(cents(after))}.`:" Weiter so!"}`),400);
     }
   }
@@ -3146,7 +3244,7 @@ const RW=(()=>{
   },60000);
 
   return{
-    panel,confetti,toast,
+    panel,confetti,toast,loginDialog,
     task(tid,id,typed){const t=TESTS.find(x=>x.id===tid),n=t&&t.tasks?t.tasks.reduce((a,g)=>a+g.items.length,0):0;if(!(/^\d+$/.test(String(id))&&+id<n))return;const k=tid+":"+id;if(s.seen[k])return;s.seen[k]=1;s.correct++;add(typed?10:5,typed?"Aufgabe richtig":"Aufgabe geschafft",tid)},
     word(prefix,id){if(!ALL.some(w=>w.id===id))return;const k="w:"+prefix+id;if(s.seen[k])return;s.seen[k]=1;s.words++;add(3,"Vokabel sitzt",prefix?"englisch-kt":"spanisch")},
     vtest(pct,tid){
