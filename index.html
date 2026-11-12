@@ -3144,7 +3144,7 @@ const RW=(()=>{
     ["str7","🏆","Wochen-Held","7 Tage am Stück gelernt",()=>s.streak>=7],
     ["str30","💎","Monats-Maschine","30 Tage am Stück gelernt",()=>s.streak>=30],
     ["mix3","🧩","Allrounder","In 3 Fächern gelernt",()=>Object.keys(s.tests).length>=3],
-    ["lvl10","💰","Erstes Guthaben","Level 10 erreicht",()=>lvlOf(s.xp)>=10],
+    ["lvl10","🔟","Zweistellig","Level 10 erreicht",()=>lvlOf(s.xp)>=10],
     ["lvl50","⭐","Level 50","Level 50 erreicht",()=>lvlOf(s.xp)>=50],
     ["lvl100","🌟","Level 100","Level 100 erreicht",()=>lvlOf(s.xp)>=100],
     ["night","🦉","Nachteule","Nach 22 Uhr gelernt",()=>!!s.flags.night],
@@ -3186,7 +3186,7 @@ const RW=(()=>{
     const c=s.tampered||!acct?0:cents(li.L),next=PAY.find(p=>li.L<p[0]),paid=acct?acct.paid||0:0;
     let open=false,popen=false;try{open=localStorage.getItem("rwBadgesOpen")==="1";popen=localStorage.getItem("rwPayOpen")==="1"}catch(e){}
     el.innerHTML=`<div class="rw-acct">${acct?`<span>👤 <b>${String(acct.name||"").replace(/</g,"&lt;")}</b>${acct.dirty?' <small title="wird gleich gespeichert">· speichert …</small>':' <small>· im Konto gespeichert ✓</small>'}</span><button type="button" class="linkbtn" id="rw-out">Abmelden</button>`
-        :`<span>Ohne Konto: kein Guthaben, Fortschritt nur auf diesem Gerät.</span><button type="button" class="btn sm" id="rw-in">🔑 Anmelden</button>`}</div>
+        :`<span>Ohne Konto bleibt dein Fortschritt nur auf diesem Gerät.</span><button type="button" class="btn sm" id="rw-in">🔑 Anmelden</button>`}</div>
       <div class="rw-top">
         <div class="lvl" style="--p:${li.p}" title="Level ${li.L}"><b>${li.L}</b></div>
         <div class="rw-who"><div class="rw-title">Level ${li.L} · ${li.title}</div>
@@ -3194,21 +3194,21 @@ const RW=(()=>{
           <div class="rw-sub">${s.xp.toLocaleString("de-DE")} XP${li.L<MAXL?` · noch ${(li.b-s.xp).toLocaleString("de-DE")} XP bis Level ${li.L+1}`:" · Maximum erreicht"}</div></div>
         <div class="streak${st?"":" off"}" title="Tage am Stück gelernt"><span>🔥</span><b>${st}</b><small>${st===1?"Tag":"Tage"}</small></div>
       </div>
-      ${s.tampered?`<div class="rw-cheat">🚨 <b>Schummler erkannt!</b> Die gespeicherten Daten wurden verändert. Dein Guthaben ist für immer gesperrt.</div>`:""}
-      <details class="rw-money"${popen?" open":""}><summary><span class="coin">💰</span><span>Guthaben <b>${acct?euro(Math.max(0,c-paid)):"–"}</b></span><small>${!acct?"nur mit Konto":s.tampered?"gesperrt":(paid?`${euro(paid)} schon ausgezahlt · `:"")+(next?`Level ${next[0]} → +${next[1]} ct`:"alles freigeschaltet")}</small></summary>
+      ${s.tampered?`<div class="rw-cheat">🚨 <b>Schummler erkannt!</b> Die gespeicherten Daten wurden verändert.${acct?" Dein Guthaben ist für immer gesperrt.":""}</div>`:""}
+      ${acct?`<details class="rw-money"${popen?" open":""}><summary><span class="coin">💰</span><span>Guthaben <b>${acct?euro(Math.max(0,c-paid)):"–"}</b></span><small>${!acct?"nur mit Konto":s.tampered?"gesperrt":(paid?`${euro(paid)} schon ausgezahlt · `:"")+(next?`Level ${next[0]} → +${next[1]} ct`:"alles freigeschaltet")}</small></summary>
         <div class="paygrid">${PAY.map(([L,ct])=>`<span class="${li.L>=L&&!s.tampered?"on":""}"><b>Lvl ${L}</b>+${ct} ct</span>`).join("")}</div>
         <p class="rw-fine">${acct?"":"<b>Guthaben gibt es nur mit Konto.</b> "}Bis Level 200 gibt es zusammen höchstens 5,00 €. Zum Auszahlen meldest du dich beim Ersteller der Seite, er sieht deinen Stand. Wer schummelt (Probe-KA verlassen oder Daten ändern), verliert XP oder das ganze Guthaben.</p>
-      </details>
+      </details>`:""}
       <div class="rw-goal"><span>Tagesziel</span><div class="rw-bar sm"><i style="width:${Math.min(100,dx/GOAL*100)}%"></i></div><span>${Math.min(dx,GOAL)}/${GOAL} XP${dx>=GOAL?" ✓":""}</span></div>
       <div class="rw-stats"><span>✓ ${s.correct} ${s.correct===1?"Aufgabe":"Aufgaben"}</span><span>📚 ${s.words} ${s.words===1?"Vokabel":"Vokabeln"}</span><span>📝 ${s.exams} ${s.exams===1?"Probe-KA":"Probe-KAs"}</span><span>⏱️ ${Math.floor((s.mins[today()]||0)/60)} h ${(s.mins[today()]||0)%60} min heute</span>${s.cheats?`<span class="bad">🚨 ${s.cheats}× geschummelt</span>`:""}</div>
       <details class="rw-badges"${open?" open":""}><summary>🏅 Abzeichen <b>${got}/${BADGES.length}</b></summary>
         <div class="bgrid">${BADGES.map(([id,e,n,d])=>`<div class="badge${s.badges[id]?"":" off"}" title="${d}"><span>${e}</span><b>${n}</b><small>${d}</small></div>`).join("")}</div>
       </details>
-      ${s.xp?"":`<p class="rw-hint">Löse Aufgaben, lerne Vokabeln und schreib Probe-KAs. So sammelst du XP, steigst im Level auf und bekommst ab Level 10 echtes Guthaben. ${acct?"Dein Fortschritt wird in deinem Konto gespeichert.":"Ohne Konto bleibt dein Fortschritt nur auf diesem Gerät."}</p>`}`;
+      ${s.xp?"":`<p class="rw-hint">Löse Aufgaben, lerne Vokabeln und schreib Probe-KAs. So sammelst du XP und steigst im Level auf${acct?" und bekommst ab Level 10 echtes Guthaben":""}. ${acct?"Dein Fortschritt wird in deinem Konto gespeichert.":"Ohne Konto bleibt dein Fortschritt nur auf diesem Gerät."}</p>`}`;
     el.querySelector("#rw-in")?.addEventListener("click",loginDialog);
     el.querySelector("#rw-out")?.addEventListener("click",()=>{if(confirm("Abmelden? Dein Fortschritt bleibt im Konto gespeichert."))logout()});
     el.querySelector(".rw-badges").addEventListener("toggle",e=>{try{localStorage.setItem("rwBadgesOpen",e.target.open?"1":"0")}catch(_){}});
-    el.querySelector(".rw-money").addEventListener("toggle",e=>{try{localStorage.setItem("rwPayOpen",e.target.open?"1":"0")}catch(_){}});
+    el.querySelector(".rw-money")?.addEventListener("toggle",e=>{try{localStorage.setItem("rwPayOpen",e.target.open?"1":"0")}catch(_){}});
   }
 
   /* Punkte */
