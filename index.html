@@ -3002,10 +3002,10 @@ $("m-reset").onclick=()=>{store.set("math:"+mt.id,{});drawTasks()};
 
 /* Belohnungen: XP, Level, Serie, Tagesziel, Abzeichen, Guthaben, Anti-Schummel */
 const RW=(()=>{
-  const K="rw:v1",GOAL=50,STEP=12,TIME_CAP=720,PENALTY=150;
+  const K="rw:v1",GOAL=50,LC=52.6,LG=1.0284,TIME_CAP=720,PENALTY=150;
   /* Guthaben in Cent je Level-Stufe: zusammen genau 5 € bei Level 200 */
-  const PAY=[[10,10],[20,25],[30,40],[40,55],[50,70],[60,50],[70,40],[80,30],[90,25],[100,25],
-             [110,13],[120,13],[130,13],[140,13],[150,13],[160,13],[170,13],[180,13],[190,13],[200,13]];
+  /* klein anfangen, später mehr: 6, 8, 10 … 44 ct */
+  const PAY=Array.from({length:20},(_,k)=>[10*(k+1),6+2*k]);
   const blank={xp:0,seen:{},days:{},streak:0,last:"",badges:{},correct:0,words:0,exams:0,best:{},tests:{},goals:{},flags:{},
                mins:{},cheats:0,tampered:0,vt:{},exd:{}};
   /* Prüfsumme gegen Ändern der gespeicherten Daten */
@@ -3027,8 +3027,10 @@ const RW=(()=>{
   const TITLES=[[1,"Neuling"],[3,"Starter"],[6,"Lernfuchs"],[10,"Durchstarter"],[15,"Wissensjäger"],[20,"Prüfungsprofi"],[30,"Notenknacker"],
     [40,"Streber"],[50,"Lern-Legende"],[70,"BK-Boss"],[90,"Einser-Maschine"],[120,"Unaufhaltsam"],[150,"Halbgott"],[180,"Lern-Gott"],[200,"Unmöglich 👑"]];
   const MAXL=200;
-  const lvlOf=xp=>Math.min(MAXL,Math.floor(Math.sqrt(xp/STEP))+1);
-  const lvlInfo=xp=>{const L=lvlOf(xp),a=STEP*(L-1)**2,b=STEP*L**2;
+  /* jedes Level kostet 2,84 % mehr XP als das davor: Level 10 ≈ 530 XP, Level 100 ≈ 28.000, Level 200 ≈ 486.000 */
+  const need=L=>Math.round(LC*(LG**(L-1)-1)/(LG-1));
+  const lvlOf=xp=>{let L=Math.min(MAXL,Math.floor(Math.log(xp*(LG-1)/LC+1)/Math.log(LG))+1);while(L<MAXL&&need(L+1)<=xp)L++;while(L>1&&need(L)>xp)L--;return L};
+  const lvlInfo=xp=>{const L=lvlOf(xp),a=need(L),b=need(L+1);
     return{L,a,b,p:L>=MAXL?100:Math.round((xp-a)/(b-a)*100),title:TITLES.filter(t=>L>=t[0]).pop()[1]}};
   const cents=L=>PAY.filter(p=>L>=p[0]).reduce((a,p)=>a+p[1],0);
   const euro=c=>(c/100).toFixed(2).replace(".",",")+" €";
