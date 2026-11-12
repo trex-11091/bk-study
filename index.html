@@ -3021,7 +3021,7 @@ $("m-reset").onclick=()=>{store.set("math:"+mt.id,{});drawTasks()};
 
 /* Belohnungen: XP, Level, Serie, Tagesziel, Abzeichen, Guthaben, Anti-Schummel */
 const RW=(()=>{
-  const K="rw:v1",KA="rw:acct",GOAL=50,LC=26.5,LG=1.018,TIME_CAP=720,PENALTY=150;
+  const K="rw:v1",KA="rw:acct",REP_CAP=200,GOAL=50,LC=26.5,LG=1.018,TIME_CAP=720,PENALTY=150;
   const API=/^(127\.0\.0\.1|localhost)$/.test(location.hostname)?"http://127.0.0.1:8790/api":"https://46-225-169-155.sslip.io/api";
   let acct=null;try{acct=JSON.parse(localStorage.getItem("bk:acct"))}catch(e){}
   const saveAcct=()=>{try{acct?localStorage.setItem("bk:acct",JSON.stringify(acct)):localStorage.removeItem("bk:acct")}catch(e){}};
@@ -3029,7 +3029,7 @@ const RW=(()=>{
   /* klein anfangen, später mehr: 6, 8, 10 … 44 ct */
   const PAY=Array.from({length:20},(_,k)=>[10*(k+1),6+2*k]);
   const blank={xp:0,seen:{},days:{},streak:0,last:"",badges:{},correct:0,words:0,exams:0,best:{},tests:{},goals:{},flags:{},
-               mins:{},cheats:0,tampered:0,vt:{},exd:{}};
+               mins:{},cheats:0,tampered:0,vt:{},exd:{},rep:{},rd:{},rdDay:""};
   /* Prüfsumme gegen Ändern der gespeicherten Daten */
   const h53=(str,seed=0)=>{let a=0xdeadbeef^seed,b=0x41c6ce57^seed;for(let i=0;i<str.length;i++){const c=str.charCodeAt(i);a=Math.imul(a^c,2654435761);b=Math.imul(b^c,1597334677)}
     a=Math.imul(a^(a>>>16),2246822507)^Math.imul(b^(b>>>13),3266489909);b=Math.imul(b^(b>>>16),2246822507)^Math.imul(a^(a>>>13),3266489909);return(4294967296*(2097151&b)+(a>>>0)).toString(36)};
@@ -3209,7 +3209,7 @@ const RW=(()=>{
         <p class="rw-fine"><b>So funktioniert die Auszahlung:</b> Ab <b>1,00 €</b> Guthaben kannst du dir dein Geld holen. Du entscheidest selbst wie: <b>bar</b>, per <b>PayPal</b> oder als Snack oder Getränk aus der <b>Cafeteria</b>. Schreib dafür einfach dem Ersteller der Seite, er sieht deinen Stand und trägt die Auszahlung ein.<br>Bis Level 200 gibt es zusammen höchstens 5,00 €. Wer schummelt (Probe-KA verlassen oder Daten ändern), verliert XP oder das ganze Guthaben.</p>
       </details>`:`<div class="rw-money teaser"><span class="coin">💰</span><div class="tz"><span>Guthaben <b>0,00 €</b></span><small>Melde dich an und fang an, mit Lernen echtes Geld zu verdienen!</small></div><button type="button" class="btn sm" id="rw-in2">Anmelden</button></div>`}
       <div class="rw-goal"><span>Tagesziel</span><div class="rw-bar sm"><i style="width:${Math.min(100,dx/GOAL*100)}%"></i></div><span>${Math.min(dx,GOAL)}/${GOAL} XP${dx>=GOAL?" ✓":""}</span></div>
-      <div class="rw-stats"><span>✓ ${s.correct} ${s.correct===1?"Aufgabe":"Aufgaben"}</span><span>📚 ${s.words} ${s.words===1?"Vokabel":"Vokabeln"}</span><span>📝 ${s.exams} ${s.exams===1?"Probe-KA":"Probe-KAs"}</span><span>⏱️ ${Math.floor((s.mins[today()]||0)/60)} h ${(s.mins[today()]||0)%60} min heute</span>${s.cheats?`<span class="bad">🚨 ${s.cheats}× geschummelt</span>`:""}</div>
+      <div class="rw-stats"><span>✓ ${s.correct} ${s.correct===1?"Aufgabe":"Aufgaben"}</span><span>📚 ${s.words} ${s.words===1?"Vokabel":"Vokabeln"}</span><span>📝 ${s.exams} ${s.exams===1?"Probe-KA":"Probe-KAs"}</span><span>⏱️ ${Math.floor((s.mins[today()]||0)/60)} h ${(s.mins[today()]||0)%60} min heute</span><span title="XP fürs Wiederholen, höchstens ${REP_CAP} am Tag">🔁 ${s.rep[today()]||0}/${REP_CAP} Wiederholung</span>${s.cheats?`<span class="bad">🚨 ${s.cheats}× geschummelt</span>`:""}</div>
       <details class="rw-badges"${open?" open":""}><summary>🏅 Abzeichen <b>${got}/${BADGES.length}</b></summary>
         <div class="bgrid">${BADGES.map(([id,e,n,d])=>`<div class="badge${s.badges[id]?"":" off"}" title="${d}"><span>${e}</span><b>${n}</b><small>${d}</small></div>`).join("")}</div>
       </details>
@@ -3243,31 +3243,37 @@ const RW=(()=>{
     }
   }
 
-  /* Lernzeit: 1 XP pro aktiver Minute (sichtbar und in den letzten 2 Minuten benutzt), höchstens 12 Stunden am Tag */
-  let lastAct=0;
-  ["pointerdown","keydown","input","scroll","touchstart"].forEach(ev=>addEventListener(ev,()=>{lastAct=Date.now()},{passive:true,capture:true}));
+  /* Lernzeit nur als Statistik: eine Minute zählt nur, wenn darin wirklich eine Antwort kam. Rumsitzen gibt keine XP. */
+  let lastAns=0;
+  const answered=()=>{lastAns=Date.now()};
   setInterval(()=>{
-    if(document.visibilityState!=="visible"||!document.hasFocus()||Date.now()-lastAct>120000)return;
-    const d=today(),m=(s.mins[d]||0)+1;s.mins[d]=m;
-    if(m<=TIME_CAP){add(1,"",null,true);if(m%30===0)toast(`⏱️ <b>${m} Minuten</b> gelernt heute · +${m} XP`)}
-    else save();
+    if(document.visibilityState!=="visible"||Date.now()-lastAns>90000)return;
+    const d=today();s.mins[d]=(s.mins[d]||0)+1;saveLocal();
   },60000);
+  /* Wiederholen: XP nur für richtig beantwortete Sachen, die man schon kannte; je Sache einmal am Tag, zusammen höchstens REP_CAP am Tag */
+  function repeatXP(key,n,why,tid){
+    const d=today();if(s.rdDay!==d){s.rdDay=d;s.rd={}}
+    if(s.rd[key])return;s.rd[key]=1;
+    const used=s.rep[d]||0;
+    if(used>=REP_CAP){save();if(!s.rd.__capped){s.rd.__capped=1;toast(`Wiederholungs-Limit für heute erreicht (${REP_CAP} XP). Neue Aufgaben geben weiter XP.`)}return}
+    const g=Math.min(n,REP_CAP-used);s.rep[d]=used+g;add(g,why,tid);
+  }
 
   return{
     panel,confetti,toast,loginDialog,
-    task(tid,id,typed){const t=TESTS.find(x=>x.id===tid),n=t&&t.tasks?t.tasks.reduce((a,g)=>a+g.items.length,0):0;if(!(/^\d+$/.test(String(id))&&+id<n))return;const k=tid+":"+id;if(s.seen[k])return;s.seen[k]=1;s.correct++;add(typed?10:5,typed?"Aufgabe richtig":"Aufgabe geschafft",tid)},
-    word(prefix,id){if(!ALL.some(w=>w.id===id))return;const k="w:"+prefix+id;if(s.seen[k])return;s.seen[k]=1;s.words++;add(3,"Vokabel sitzt",prefix?"englisch-kt":"spanisch")},
-    vtest(pct,tid){
+    task(tid,id,typed){const t=TESTS.find(x=>x.id===tid),n=t&&t.tasks?t.tasks.reduce((a,g)=>a+g.items.length,0):0;if(!(/^\d+$/.test(String(id))&&+id<n))return;answered();const k=tid+":"+id;if(s.seen[k]){if(typed)repeatXP("t:"+k,2,"Wiederholt",tid);return}s.seen[k]=1;s.correct++;add(typed?10:5,typed?"Aufgabe richtig":"Aufgabe geschafft",tid)},
+    word(prefix,id,quiz){if(!ALL.some(w=>w.id===id))return;answered();const k="w:"+prefix+id;if(s.seen[k]){if(quiz)repeatXP(k,1,"Vokabel wiederholt",prefix?"englisch-kt":"spanisch");return}s.seen[k]=1;s.words++;add(3,"Vokabel sitzt",prefix?"englisch-kt":"spanisch")},
+    vtest(pct,tid){answered();
       const k=tid+":"+today();if(s.vt[k]){toast("Vokabeltest heute schon gewertet, morgen gibt's wieder XP");return}
       s.vt[k]=1;add(Math.max(2,Math.round(pct/5)),`Vokabeltest ${pct} %`,tid);if(pct>=90)confetti(120);
     },
-    exam(tid,note,pct){
+    exam(tid,note,pct){answered();
       s.exams++;const old=s.best[tid];
       const xp=[0,100,70,50,30,15,15][note];
       let give;
       if(!old)give=xp;                                   // erste Probe-KA in diesem Fach: volle XP
       else if(note<old)give=xp-[0,100,70,50,30,15,15][old]; // bessere Note: nur die Differenz
-      else{const k=tid+":"+today();give=s.exd[k]?0:5;s.exd[k]=1} // sonst 5 XP, einmal am Tag
+      else{const k=tid+":"+today();give=s.exd[k]?0:[0,30,20,15,10,5,5][note];s.exd[k]=1} // nochmal geschrieben: XP nach Note, einmal am Tag
       if(!old||note<old)s.best[tid]=note;
       if(give>0)add(give,`Probe-KA Note ${note}`,tid);else{save();panel();toast("Probe-KA heute schon gewertet")}
       if(note<=2)setTimeout(()=>confetti(note===1?260:160),200);
@@ -3302,7 +3308,7 @@ const FACH_COL={"Englisch":["#3b82f6","#06b6d4"],"Mathe":["#8b5cf6","#ec4899"],"
   };
   const _drawHome=drawHome;drawHome=function(){_drawHome();RW.panel()};
   const _got=got;got=function(){if(cur)RW.word(vPrefix,cur.id);_got()};
-  const _pick=pick;pick=function(b){const id=q&&q.id,ok=b.dataset.id===id;_pick(b);if(ok)RW.word(vPrefix,id)};
+  const _pick=pick;pick=function(b){const id=q&&q.id,ok=b.dataset.id===id;_pick(b);if(ok)RW.word(vPrefix,id,true)};
   const _testResult=testResult;testResult=function(){
     _testResult();
     const rows=tList.map((w,i)=>check(tAns[i],ans(w),w.c==="Sätze")),g=rows.filter(r=>r.k==="g").length,sm=rows.filter(r=>r.k==="s").length;
