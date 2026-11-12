@@ -1317,8 +1317,15 @@ function judgeText(input,exp){
   lastFuzzy=null;
   const u=tnorm(input);if(!u||!exp.length)return false;
   const UV=sVar(u);
+  if(exp.length>1){
+    /* mehrere Lücken: JEDE Lücke muss in der Antwort vorkommen (kleine Tippfehler erlaubt) */
+    const pad=" "+u+" ",W=u.split(" ");
+    const has=a=>{const t=tnorm(a);if(pad.includes(" "+t+" "))return true;
+      const n=t.split(" ").length;for(let i=0;i+n<=W.length;i++)if(fuzzyEq(W.slice(i,i+n).join(" "),t)){lastFuzzy=a;return true}
+      return false};
+    return exp.every(alts=>alts.some(has));
+  }
   if(exp.some(alts=>alts.some(a=>{const av=sVar(tnorm(a));return UV.some(x=>av.includes(x))})))return true;
-  if(exp.length>1)return exp.every(alts=>alts.some(a=>(" "+u+" ").includes(" "+tnorm(a)+" ")));
   for(const alts of exp)for(const a of alts){const av=sVar(tnorm(a));if(UV.some(x=>av.some(y=>fuzzyEq(x,y)))){lastFuzzy=a;return true}}
   return false;
 }
