@@ -3093,7 +3093,7 @@ $("m-reset").onclick=()=>{store.set("math:"+mt.id,{});drawTasks()};
 
 /* Belohnungen: XP, Level, Serie, Tagesziel, Abzeichen, Guthaben, Anti-Schummel */
 const RW=(()=>{
-  const K="rw:v1",KA="rw:acct",REP_CAP=200,GOAL=50,LC=26.5,LG=1.018,TIME_CAP=720,PENALTY=150;
+  const K="rw:v1",KA="rw:acct",REP_CAP=100,GOAL=50,LC=26.5,LG=1.018,TIME_CAP=720,PENALTY=150;
   const API=/^(127\.0\.0\.1|localhost)$/.test(location.hostname)?"http://127.0.0.1:8790/api":"https://46-225-169-155.sslip.io/api";
   let acct=null;try{acct=JSON.parse(localStorage.getItem("bk:acct"))}catch(e){}
   const saveAcct=()=>{try{acct?localStorage.setItem("bk:acct",JSON.stringify(acct)):localStorage.removeItem("bk:acct")}catch(e){}};
@@ -3132,7 +3132,7 @@ const RW=(()=>{
     (j.results||[]).forEach(r=>{
       if(r.xp>0)toast(`<b>+${r.xp} XP</b> ${r.why}`);
       else if(r.xp<0)toast(`<b>${r.xp} XP</b> ${r.why}`);
-      else if(r.limit&&!shown.has(r.limit)){shown.add(r.limit);toast(r.limit==="day"?`Tageslimit erreicht (300 XP). Morgen geht's weiter!`:r.limit==="rep"?`Wiederholungs-Limit für heute erreicht (${REP_CAP} XP).`:r.limit==="speed"?"Zu schnell! Antworten im Sekundentakt zählen nicht.":r.why)}
+      else if(r.limit&&!shown.has(r.limit)&&!(r.limit==="tempo"&&Date.now()-(window._tempoT||0)<90000)){shown.add(r.limit);if(r.limit==="tempo")window._tempoT=Date.now();toast(r.limit==="day"?`Tageslimit erreicht (150 XP). Morgen geht's weiter!`:r.limit==="tempo"?`⏳ <b>XP-Tempo erreicht.</b> In ca. ${Math.max(1,Math.ceil((r.wait||60)/60))} Min gibt's wieder XP. Lern ruhig weiter, Aufgaben ohne XP geben später noch XP.`:r.limit==="rep"?`Wiederholungs-Limit für heute erreicht (${REP_CAP} XP).`:r.limit==="speed"?"Zu schnell! Antworten im Sekundentakt zählen nicht.":r.why)}
     });
     if(!bG&&s.goals[today()])setTimeout(()=>{toast("🎉 <b>Tagesziel geschafft!</b>","gold");confetti(90)},500);
     BADGES.forEach(([id,e,name],i)=>{if(s.badges[id]&&!bB.has(id))setTimeout(()=>{toast(`${e} <b>Abzeichen:</b> ${name}`,"gold");confetti(70)},800+i*60)});
@@ -3352,19 +3352,19 @@ const RW=(()=>{
   return{
     panel,confetti,toast,loginDialog,
     examStart(tid){if(acct)send({type:"exam_start",tid},true)},
-    task(tid,id,typed){if(acct){answered();return send({type:"task",tid,id:+id,typed:!!typed})}const t=TESTS.find(x=>x.id===tid),n=t&&t.tasks?t.tasks.reduce((a,g)=>a+g.items.length,0):0;if(!(/^\d+$/.test(String(id))&&+id<n))return;answered();const k=tid+":"+id;if(s.seen[k]){if(typed)repeatXP("t:"+k,2,"Wiederholt",tid);return}s.seen[k]=1;s.correct++;add(typed?10:5,typed?"Aufgabe richtig":"Aufgabe geschafft",tid)},
-    word(prefix,id,quiz){if(!ALL.some(w=>w.id===id))return;if(acct){answered();return send({type:"word",tid:prefix?"englisch-kt":"spanisch",id,quiz:!!quiz})}answered();const k="w:"+prefix+id;if(s.seen[k]){if(quiz)repeatXP(k,1,"Vokabel wiederholt",prefix?"englisch-kt":"spanisch");return}s.seen[k]=1;s.words++;add(3,"Vokabel sitzt",prefix?"englisch-kt":"spanisch")},
+    task(tid,id,typed){if(acct){answered();return send({type:"task",tid,id:+id,typed:!!typed})}const t=TESTS.find(x=>x.id===tid),n=t&&t.tasks?t.tasks.reduce((a,g)=>a+g.items.length,0):0;if(!(/^\d+$/.test(String(id))&&+id<n))return;answered();const k=tid+":"+id;if(s.seen[k]){if(typed)repeatXP("t:"+k,1,"Wiederholt",tid);return}s.seen[k]=1;s.correct++;add(typed?3:2,typed?"Aufgabe richtig":"Aufgabe geschafft",tid)},
+    word(prefix,id,quiz){if(!ALL.some(w=>w.id===id))return;if(acct){answered();return send({type:"word",tid:prefix?"englisch-kt":"spanisch",id,quiz:!!quiz})}answered();const k="w:"+prefix+id;if(s.seen[k]){if(quiz)repeatXP(k,1,"Vokabel wiederholt",prefix?"englisch-kt":"spanisch");return}s.seen[k]=1;s.words++;add(1,"Vokabel sitzt",prefix?"englisch-kt":"spanisch")},
     vtest(pct,tid){answered();if(acct)return send({type:"vtest",tid,pct},true);
       const k=tid+":"+today();if(s.vt[k]){toast("Vokabeltest heute schon gewertet, morgen gibt's wieder XP");return}
-      s.vt[k]=1;add(Math.max(2,Math.round(pct/5)),`Vokabeltest ${pct} %`,tid);if(pct>=90)confetti(120);
+      s.vt[k]=1;add(Math.max(1,Math.round(pct/10)),`Vokabeltest ${pct} %`,tid);if(pct>=90)confetti(120);
     },
     exam(tid,note,pct){answered();if(acct){if(note<=2)setTimeout(()=>confetti(note===1?260:160),200);return send({type:"exam",tid,note,pct},true)}
       s.exams++;const old=s.best[tid];
-      const xp=[0,100,70,50,30,15,15][note];
+      const xp=[0,60,45,30,20,10,10][note];
       let give;
       if(!old)give=xp;                                   // erste Probe-KA in diesem Fach: volle XP
-      else if(note<old)give=xp-[0,100,70,50,30,15,15][old]; // bessere Note: nur die Differenz
-      else{const k=tid+":"+today();give=s.exd[k]?0:[0,30,20,15,10,5,5][note];s.exd[k]=1} // nochmal geschrieben: XP nach Note, einmal am Tag
+      else if(note<old)give=xp-[0,60,45,30,20,10,10][old]; // bessere Note: nur die Differenz
+      else{const k=tid+":"+today();give=s.exd[k]?0:[0,15,10,8,5,3,3][note];s.exd[k]=1} // nochmal geschrieben: XP nach Note, einmal am Tag
       if(!old||note<old)s.best[tid]=note;
       if(give>0)add(give,`Probe-KA Note ${note}`,tid);else{save();panel();toast("Probe-KA heute schon gewertet")}
       if(note<=2)setTimeout(()=>confetti(note===1?260:160),200);
