@@ -3021,7 +3021,7 @@ $("m-reset").onclick=()=>{store.set("math:"+mt.id,{});drawTasks()};
 
 /* Belohnungen: XP, Level, Serie, Tagesziel, Abzeichen, Guthaben, Anti-Schummel */
 const RW=(()=>{
-  const K="rw:v1",KA="rw:acct",GOAL=50,LC=52.6,LG=1.0284,TIME_CAP=720,PENALTY=150;
+  const K="rw:v1",KA="rw:acct",GOAL=50,LC=53,LG=1.018,TIME_CAP=720,PENALTY=150;
   const API=/^(127\.0\.0\.1|localhost)$/.test(location.hostname)?"http://127.0.0.1:8790/api":"https://46-225-169-155.sslip.io/api";
   let acct=null;try{acct=JSON.parse(localStorage.getItem("bk:acct"))}catch(e){}
   const saveAcct=()=>{try{acct?localStorage.setItem("bk:acct",JSON.stringify(acct)):localStorage.removeItem("bk:acct")}catch(e){}};
@@ -3127,7 +3127,7 @@ const RW=(()=>{
   const TITLES=[[1,"Neuling"],[3,"Starter"],[6,"Lernfuchs"],[10,"Durchstarter"],[15,"Wissensjäger"],[20,"Prüfungsprofi"],[30,"Notenknacker"],
     [40,"Streber"],[50,"Lern-Legende"],[70,"BK-Boss"],[90,"Einser-Maschine"],[120,"Unaufhaltsam"],[150,"Halbgott"],[180,"Lern-Gott"],[200,"Unmöglich 👑"]];
   const MAXL=200;
-  /* jedes Level kostet 2,84 % mehr XP als das davor: Level 10 ≈ 530 XP, Level 100 ≈ 28.000, Level 200 ≈ 486.000 */
+  /* jedes Level kostet 1,8 % mehr XP als das davor: Level 10 ≈ 510 XP, Level 100 ≈ 14.300, Level 200 ≈ 99.600 (≈ 1 Jahr à 3 h/Tag) */
   const need=L=>Math.round(LC*(LG**(L-1)-1)/(LG-1));
   const lvlOf=xp=>{let L=Math.min(MAXL,Math.floor(Math.log(xp*(LG-1)/LC+1)/Math.log(LG))+1);while(L<MAXL&&need(L+1)<=xp)L++;while(L>1&&need(L)>xp)L--;return L};
   const lvlInfo=xp=>{const L=lvlOf(xp),a=need(L),b=need(L+1);
