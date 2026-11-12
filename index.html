@@ -293,6 +293,27 @@ body::after{background:radial-gradient(circle,var(--g2),transparent 65%);bottom:
 .lu p{margin:0 0 18px;color:var(--muted)} .lu .btn{width:100%;background:linear-gradient(120deg,var(--g1),var(--g2))}
 @keyframes fade{from{opacity:0}} @keyframes pop{from{opacity:0;transform:scale(.7)}}
 @media (prefers-reduced-motion:reduce){body::before,body::after,.brand,#rw-panel::after,.streak span,.toast,.lu,#rw-modal{animation:none!important}}
+.grade.n7{color:var(--bad);animation:shake .5s 2}
+@keyframes shake{25%{transform:translateX(-6px) rotate(-3deg)}75%{transform:translateX(6px) rotate(3deg)}}
+.cheat-card{border:2px solid var(--bad)!important;box-shadow:0 10px 40px rgba(255,90,110,.35)!important}
+.cheatwarn{margin:0;padding:10px 12px;border-radius:12px;background:rgba(255,90,110,.12);border:1px solid var(--bad);font-size:14px}
+.cheatwarn.sm{padding:6px 10px;font-size:13px;text-align:center}
+.rw-cheat{padding:10px 12px;border-radius:12px;background:rgba(255,90,110,.15);border:1px solid var(--bad);font-size:14px}
+.rw-money{border-radius:14px;padding:10px 12px;background:linear-gradient(120deg,rgba(255,209,102,.22),rgba(255,138,61,.16));border:1px solid rgba(246,184,0,.55)}
+.rw-money summary{display:flex;align-items:center;gap:10px;cursor:pointer;list-style:none;font-weight:700}
+.rw-money summary::-webkit-details-marker{display:none}
+.rw-money summary small{margin-left:auto;font-size:12px;color:var(--muted);text-align:right}
+.rw-money summary b{font:800 1.15rem var(--display)}
+.rw-money .coin{font-size:1.4rem;animation:flick 2.4s ease-in-out infinite}
+.paygrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(70px,1fr));gap:6px;margin-top:10px}
+.paygrid span{display:flex;flex-direction:column;align-items:center;padding:6px 2px;border-radius:10px;background:var(--card);border:1px solid var(--line);font-size:12px;color:var(--muted)}
+.paygrid span b{font-size:12px;color:var(--ink)}
+.paygrid span.on{border-color:#f6b800;background:linear-gradient(140deg,#ffd166,#ffb347);color:#1b2340}
+.paygrid span.on b{color:#1b2340}
+.rw-fine{margin:10px 0 0;font-size:12px;color:var(--muted)}
+.rw-stats span.bad{border-color:var(--bad);color:var(--bad)}
+.lu.bad h2{background:none;color:var(--bad)}
+@media (prefers-reduced-motion:reduce){.grade.n7,.rw-money .coin{animation:none!important}}
 </style>
 </head>
 <body>
@@ -2979,19 +3000,38 @@ $("m-all").onclick=()=>{
 $("m-reset").onclick=()=>{store.set("math:"+mt.id,{});drawTasks()};
 
 
-/* Belohnungen: XP, Level, Serie, Tagesziel, Abzeichen */
+/* Belohnungen: XP, Level, Serie, Tagesziel, Abzeichen, Guthaben, Anti-Schummel */
 const RW=(()=>{
-  const K="rw:v1",GOAL=50,STEP=40;
-  const blank={xp:0,seen:{},days:{},streak:0,last:"",badges:{},correct:0,words:0,exams:0,best:{},tests:{},goals:{},flags:{}};
+  const K="rw:v1",GOAL=50,STEP=12,TIME_CAP=720,PENALTY=150;
+  /* Guthaben in Cent je Level-Stufe: zusammen genau 5 € bei Level 200 */
+  const PAY=[[10,10],[20,25],[30,40],[40,55],[50,70],[60,50],[70,40],[80,30],[90,25],[100,25],
+             [110,13],[120,13],[130,13],[140,13],[150,13],[160,13],[170,13],[180,13],[190,13],[200,13]];
+  const blank={xp:0,seen:{},days:{},streak:0,last:"",badges:{},correct:0,words:0,exams:0,best:{},tests:{},goals:{},flags:{},
+               mins:{},cheats:0,tampered:0,vt:{},exd:{}};
+  /* Prüfsumme gegen Ändern der gespeicherten Daten */
+  const h53=(str,seed=0)=>{let a=0xdeadbeef^seed,b=0x41c6ce57^seed;for(let i=0;i<str.length;i++){const c=str.charCodeAt(i);a=Math.imul(a^c,2654435761);b=Math.imul(b^c,1597334677)}
+    a=Math.imul(a^(a>>>16),2246822507)^Math.imul(b^(b>>>13),3266489909);b=Math.imul(b^(b>>>16),2246822507)^Math.imul(a^(a>>>13),3266489909);return(4294967296*(2097151&b)+(a>>>0)).toString(36)};
+  const sign=o=>h53("bk|"+JSON.stringify(o)+"|study",1091);
   let s;
-  try{s=Object.assign({},blank,JSON.parse(localStorage.getItem(K))||{})}catch(e){s={...blank}}
-  const save=()=>{try{localStorage.setItem(K,JSON.stringify(s))}catch(e){}};
+  try{
+    const raw=JSON.parse(localStorage.getItem(K));
+    if(raw){const{sig,...rest}=raw;s=Object.assign({},blank,rest);
+      if(sig===undefined?s.xp>2000:sig!==sign(rest)){s.tampered=1;s.flags.tamperedAt=Date.now()}}
+    else s={...blank};
+  }catch(e){s={...blank}}
+  const save=()=>{try{const{sig,...rest}=s;localStorage.setItem(K,JSON.stringify({...rest,sig:sign(rest)}))}catch(e){}};
+  save();
   const pad=n=>String(n).padStart(2,"0");
   const iso=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
   const today=()=>iso(new Date()),yday=()=>iso(new Date(Date.now()-864e5));
-  const TITLES=["Neuling","Starter","Lernfuchs","Durchstarter","Wissensjäger","Prüfungsprofi","Notenknacker","Lern-Legende","BK-Boss","Einser-Maschine"];
-  const lvlOf=xp=>Math.floor(Math.sqrt(xp/STEP))+1;
-  const lvlInfo=xp=>{const L=lvlOf(xp),a=STEP*(L-1)**2,b=STEP*L**2;return{L,a,b,p:Math.round((xp-a)/(b-a)*100),title:TITLES[L-1]||"Lern-Gott"}};
+  const TITLES=[[1,"Neuling"],[3,"Starter"],[6,"Lernfuchs"],[10,"Durchstarter"],[15,"Wissensjäger"],[20,"Prüfungsprofi"],[30,"Notenknacker"],
+    [40,"Streber"],[50,"Lern-Legende"],[70,"BK-Boss"],[90,"Einser-Maschine"],[120,"Unaufhaltsam"],[150,"Halbgott"],[180,"Lern-Gott"],[200,"Unmöglich 👑"]];
+  const MAXL=200;
+  const lvlOf=xp=>Math.min(MAXL,Math.floor(Math.sqrt(xp/STEP))+1);
+  const lvlInfo=xp=>{const L=lvlOf(xp),a=STEP*(L-1)**2,b=STEP*L**2;
+    return{L,a,b,p:L>=MAXL?100:Math.round((xp-a)/(b-a)*100),title:TITLES.filter(t=>L>=t[0]).pop()[1]}};
+  const cents=L=>PAY.filter(p=>L>=p[0]).reduce((a,p)=>a+p[1],0);
+  const euro=c=>(c/100).toFixed(2).replace(".",",")+" €";
   const streakNow=()=>s.last===today()||s.last===yday()?s.streak:0;
   const BADGES=[
     ["first","🎯","Erster Treffer","1 Aufgabe richtig",()=>s.correct>=1],
@@ -3006,8 +3046,11 @@ const RW=(()=>{
     ["goal","✅","Tagesziel","50 XP an einem Tag",()=>Object.keys(s.goals).length>=1],
     ["str3","📅","Dranbleiber","3 Tage am Stück gelernt",()=>s.streak>=3],
     ["str7","🏆","Wochen-Held","7 Tage am Stück gelernt",()=>s.streak>=7],
+    ["str30","💎","Monats-Maschine","30 Tage am Stück gelernt",()=>s.streak>=30],
     ["mix3","🧩","Allrounder","In 3 Fächern gelernt",()=>Object.keys(s.tests).length>=3],
-    ["lvl5","⭐","Level 5","Level 5 erreicht",()=>lvlOf(s.xp)>=5],
+    ["lvl10","💰","Erstes Guthaben","Level 10 erreicht",()=>lvlOf(s.xp)>=10],
+    ["lvl50","⭐","Level 50","Level 50 erreicht",()=>lvlOf(s.xp)>=50],
+    ["lvl100","🌟","Level 100","Level 100 erreicht",()=>lvlOf(s.xp)>=100],
     ["night","🦉","Nachteule","Nach 22 Uhr gelernt",()=>!!s.flags.night],
     ["early","🌅","Frühaufsteher","Vor 7 Uhr gelernt",()=>!!s.flags.early]
   ];
@@ -3034,55 +3077,94 @@ const RW=(()=>{
       t-t0<2600?requestAnimationFrame(f):c.remove();
     })(t0);
   }
-  function modal(emoji,title,text){
+  function modal(emoji,title,text,bad){
+    document.getElementById("rw-modal")?.remove();
     const m=document.createElement("div");m.id="rw-modal";
-    m.innerHTML=`<div class="lu" role="dialog" aria-modal="true"><div class="lu-e">${emoji}</div><h2>${title}</h2><p>${text}</p><button class="btn" type="button">Weiter lernen</button></div>`;
+    m.innerHTML=`<div class="lu${bad?" bad":""}" role="dialog" aria-modal="true"><div class="lu-e">${emoji}</div><h2>${title}</h2><p>${text}</p><button class="btn" type="button">${bad?"Okay, verstanden":"Weiter lernen"}</button></div>`;
     const close=()=>m.remove();m.onclick=e=>{if(e.target===m)close()};m.querySelector("button").onclick=close;
-    document.body.append(m);m.querySelector("button").focus();confetti(220);
+    document.body.append(m);m.querySelector("button").focus();if(!bad)confetti(220);
   }
   function panel(){
     const el=document.getElementById("rw-panel");if(!el)return;
     const li=lvlInfo(s.xp),st=streakNow(),dx=s.days[today()]||0,got=BADGES.filter(b=>s.badges[b[0]]).length;
-    let open=false;try{open=localStorage.getItem("rwBadgesOpen")==="1"}catch(e){}
+    const c=s.tampered?0:cents(li.L),next=PAY.find(p=>li.L<p[0]);
+    let open=false,popen=false;try{open=localStorage.getItem("rwBadgesOpen")==="1";popen=localStorage.getItem("rwPayOpen")==="1"}catch(e){}
     el.innerHTML=`<div class="rw-top">
         <div class="lvl" style="--p:${li.p}" title="Level ${li.L}"><b>${li.L}</b></div>
         <div class="rw-who"><div class="rw-title">Level ${li.L} · ${li.title}</div>
           <div class="rw-bar"><i style="width:${li.p}%"></i></div>
-          <div class="rw-sub">${s.xp} XP · noch ${li.b-s.xp} XP bis Level ${li.L+1}</div></div>
+          <div class="rw-sub">${s.xp.toLocaleString("de-DE")} XP${li.L<MAXL?` · noch ${(li.b-s.xp).toLocaleString("de-DE")} XP bis Level ${li.L+1}`:" · Maximum erreicht"}</div></div>
         <div class="streak${st?"":" off"}" title="Tage am Stück gelernt"><span>🔥</span><b>${st}</b><small>${st===1?"Tag":"Tage"}</small></div>
       </div>
+      ${s.tampered?`<div class="rw-cheat">🚨 <b>Schummler erkannt!</b> Die gespeicherten Daten wurden verändert. Dein Guthaben ist für immer gesperrt.</div>`:""}
+      <details class="rw-money"${popen?" open":""}><summary><span class="coin">💰</span><span>Guthaben <b>${euro(c)}</b></span><small>${s.tampered?"gesperrt":next?`Level ${next[0]} → +${next[1]} ct`:"alles freigeschaltet"}</small></summary>
+        <div class="paygrid">${PAY.map(([L,ct])=>`<span class="${li.L>=L&&!s.tampered?"on":""}"><b>Lvl ${L}</b>+${ct} ct</span>`).join("")}</div>
+        <p class="rw-fine">Bis Level 200 gibt es zusammen höchstens 5,00 €. Zum Auszahlen zeigst du diese Karte dem Ersteller der Seite. Wer schummelt (Probe-KA verlassen oder Daten ändern), verliert XP oder das ganze Guthaben.</p>
+      </details>
       <div class="rw-goal"><span>Tagesziel</span><div class="rw-bar sm"><i style="width:${Math.min(100,dx/GOAL*100)}%"></i></div><span>${Math.min(dx,GOAL)}/${GOAL} XP${dx>=GOAL?" ✓":""}</span></div>
-      <div class="rw-stats"><span>✓ ${s.correct} ${s.correct===1?"Aufgabe":"Aufgaben"}</span><span>📚 ${s.words} ${s.words===1?"Vokabel":"Vokabeln"}</span><span>📝 ${s.exams} ${s.exams===1?"Probe-KA":"Probe-KAs"}</span></div>
+      <div class="rw-stats"><span>✓ ${s.correct} ${s.correct===1?"Aufgabe":"Aufgaben"}</span><span>📚 ${s.words} ${s.words===1?"Vokabel":"Vokabeln"}</span><span>📝 ${s.exams} ${s.exams===1?"Probe-KA":"Probe-KAs"}</span><span>⏱️ ${Math.floor((s.mins[today()]||0)/60)} h ${(s.mins[today()]||0)%60} min heute</span>${s.cheats?`<span class="bad">🚨 ${s.cheats}× geschummelt</span>`:""}</div>
       <details class="rw-badges"${open?" open":""}><summary>🏅 Abzeichen <b>${got}/${BADGES.length}</b></summary>
         <div class="bgrid">${BADGES.map(([id,e,n,d])=>`<div class="badge${s.badges[id]?"":" off"}" title="${d}"><span>${e}</span><b>${n}</b><small>${d}</small></div>`).join("")}</div>
       </details>
-      ${s.xp?"":`<p class="rw-hint">Löse Aufgaben, lerne Vokabeln und schreib Probe-KAs, dann sammelst du XP, steigst im Level auf und schaltest Abzeichen frei. Dein Fortschritt bleibt auf diesem Gerät gespeichert.</p>`}`;
+      ${s.xp?"":`<p class="rw-hint">Löse Aufgaben, lerne Vokabeln und schreib Probe-KAs. So sammelst du XP, steigst im Level auf und bekommst ab Level 10 echtes Guthaben. Dein Fortschritt bleibt auf diesem Gerät gespeichert.</p>`}`;
     el.querySelector(".rw-badges").addEventListener("toggle",e=>{try{localStorage.setItem("rwBadgesOpen",e.target.open?"1":"0")}catch(_){}});
+    el.querySelector(".rw-money").addEventListener("toggle",e=>{try{localStorage.setItem("rwPayOpen",e.target.open?"1":"0")}catch(_){}});
   }
 
   /* Punkte */
-  function add(n,why,tid){
-    if(n<=0)return;
-    const d=today(),before=lvlOf(s.xp),dayBefore=s.days[d]||0;
+  function touchDay(){
+    const d=today();
     if(s.last!==d){s.streak=s.last===yday()?s.streak+1:1;s.last=d}
     const h=new Date().getHours();if(h>=22||h<4)s.flags.night=1;if(h>=4&&h<7)s.flags.early=1;
+    return d;
+  }
+  function add(n,why,tid,quiet){
+    if(n<=0)return;
+    const before=lvlOf(s.xp),d=touchDay(),dayBefore=s.days[d]||0;
     s.xp+=n;s.days[d]=dayBefore+n;if(tid)s.tests[tid]=1;
-    toast(`<b>+${n} XP</b> ${why}`);
+    if(!quiet)toast(`<b>+${n} XP</b> ${why}`);
     if(dayBefore<GOAL&&s.days[d]>=GOAL&&!s.goals[d]){s.goals[d]=1;setTimeout(()=>{toast("🎉 <b>Tagesziel geschafft!</b>","gold");confetti(90)},500)}
     const after=lvlOf(s.xp);
     BADGES.forEach(([id,e,name,,ok],i)=>{if(!s.badges[id]&&ok()){s.badges[id]=d;setTimeout(()=>{toast(`${e} <b>Abzeichen:</b> ${name}`,"gold");confetti(70)},800+i*60)}});
     save();panel();
-    if(after>before)setTimeout(()=>modal("🚀",`Level ${after}!`,`Du bist jetzt <b>${lvlInfo(s.xp).title}</b>. Weiter so!`),400);
+    if(after>before){
+      const gain=s.tampered?0:cents(after)-cents(before);
+      setTimeout(()=>modal(gain?"💰":"🚀",`Level ${after}!`,`Du bist jetzt <b>${lvlInfo(s.xp).title}</b>.${gain?` Du hast <b>+${gain} ct Guthaben</b> bekommen, jetzt hast du ${euro(cents(after))}.`:" Weiter so!"}`),400);
+    }
   }
+
+  /* Lernzeit: 1 XP pro aktiver Minute (sichtbar und in den letzten 2 Minuten benutzt), höchstens 12 Stunden am Tag */
+  let lastAct=0;
+  ["pointerdown","keydown","input","scroll","touchstart"].forEach(ev=>addEventListener(ev,()=>{lastAct=Date.now()},{passive:true,capture:true}));
+  setInterval(()=>{
+    if(document.visibilityState!=="visible"||!document.hasFocus()||Date.now()-lastAct>120000)return;
+    const d=today(),m=(s.mins[d]||0)+1;s.mins[d]=m;
+    if(m<=TIME_CAP){add(1,"",null,true);if(m%30===0)toast(`⏱️ <b>${m} Minuten</b> gelernt heute · +${m} XP`)}
+    else save();
+  },60000);
+
   return{
-    panel,confetti,
-    task(tid,id,typed){const k=tid+":"+id;if(s.seen[k])return;s.seen[k]=1;s.correct++;add(typed?10:5,typed?"Aufgabe richtig":"Aufgabe geschafft",tid)},
-    word(prefix,id){const k="w:"+prefix+id;if(s.seen[k])return;s.seen[k]=1;s.words++;add(3,"Vokabel sitzt",prefix?"englisch-kt":"spanisch")},
-    vtest(pct,tid){add(Math.max(2,Math.round(pct/5)),`Vokabeltest ${pct} %`,tid);if(pct>=90)confetti(120)},
+    panel,confetti,toast,
+    task(tid,id,typed){const t=TESTS.find(x=>x.id===tid),n=t&&t.tasks?t.tasks.reduce((a,g)=>a+g.items.length,0):0;if(!(/^\d+$/.test(String(id))&&+id<n))return;const k=tid+":"+id;if(s.seen[k])return;s.seen[k]=1;s.correct++;add(typed?10:5,typed?"Aufgabe richtig":"Aufgabe geschafft",tid)},
+    word(prefix,id){if(!ALL.some(w=>w.id===id))return;const k="w:"+prefix+id;if(s.seen[k])return;s.seen[k]=1;s.words++;add(3,"Vokabel sitzt",prefix?"englisch-kt":"spanisch")},
+    vtest(pct,tid){
+      const k=tid+":"+today();if(s.vt[k]){toast("Vokabeltest heute schon gewertet, morgen gibt's wieder XP");return}
+      s.vt[k]=1;add(Math.max(2,Math.round(pct/5)),`Vokabeltest ${pct} %`,tid);if(pct>=90)confetti(120);
+    },
     exam(tid,note,pct){
-      s.exams++;if(!s.best[tid]||note<s.best[tid])s.best[tid]=note;
-      add([0,100,70,50,30,15,15][note],`Probe-KA Note ${note}`,tid);
+      s.exams++;const old=s.best[tid];
+      const xp=[0,100,70,50,30,15,15][note];
+      let give;
+      if(!old)give=xp;                                   // erste Probe-KA in diesem Fach: volle XP
+      else if(note<old)give=xp-[0,100,70,50,30,15,15][old]; // bessere Note: nur die Differenz
+      else{const k=tid+":"+today();give=s.exd[k]?0:5;s.exd[k]=1} // sonst 5 XP, einmal am Tag
+      if(!old||note<old)s.best[tid]=note;
+      if(give>0)add(give,`Probe-KA Note ${note}`,tid);else{save();panel();toast("Probe-KA heute schon gewertet")}
       if(note<=2)setTimeout(()=>confetti(note===1?260:160),200);
+    },
+    cheat(tid){
+      touchDay();s.cheats++;const lost=Math.min(s.xp,PENALTY);s.xp-=lost;s.tests[tid]=1;save();panel();
+      return lost;
     },
     progress(t){
       try{
@@ -3125,6 +3207,31 @@ const FACH_COL={"Englisch":["#3b82f6","#06b6d4"],"Mathe":["#8b5cf6","#ec4899"],"
   };
 }
 
+
+/* Anti-Schummel: Wer während der Probe-KA die App verlässt, bekommt eine 7 */
+{
+  const live=()=>exam&&!exam.done&&!!$("ex-time");
+  const caught=why=>{
+    if(!live())return;
+    stopExam();exam.done=true;exam.cheated=true;
+    const d=new Date();store.set("exam:"+mt.id,{note:7,pct:0,date:`${d.getDate()}.${d.getMonth()+1}.`});
+    const lost=RW.cheat(mt.id);
+    $("m-body").innerHTML=`<div class="card grade-card cheat-card" style="cursor:default;min-height:0">
+        <div class="grade n7">7</div>
+        <div class="word" style="font-size:1.5rem">Du Schummler! 🚨</div>
+        <p style="margin:0">Du hast während der Probe-KA die App verlassen (${why}). Das zählt als Täuschungsversuch.</p>
+        <p class="warn" style="margin:0"><b>Note 7</b> · <b>−${lost} XP</b></p>
+      </div>
+      <div class="actions"><button class="btn plain" id="ex-again">Nochmal, diesmal ehrlich</button><button class="btn yes" id="ex-tasks">Zu den Aufgaben</button></div>`;
+    $("ex-again").onclick=()=>drawExamIntro();$("ex-tasks").onclick=()=>setMView("tasks");
+    window.scrollTo(0,0);
+  };
+  document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden")caught("App oder Tab gewechselt")});
+  let bt;addEventListener("blur",()=>{if(!live())return;clearTimeout(bt);bt=setTimeout(()=>{if(live()&&!document.hasFocus())caught("anderes Fenster geöffnet")},1500)});
+  const WARN=`<p class="cheatwarn">🔒 <b>Anti-Schummel:</b> Verlässt du während der Probe-KA die App (anderer Tab, andere App, KI fragen, Handy sperren), ist sie sofort vorbei: <b>Note 7</b> und <b>−150 XP</b>.</p>`;
+  const _intro=drawExamIntro;drawExamIntro=function(){_intro();$("m-body").querySelector(".card")?.insertAdjacentHTML("beforeend",WARN)};
+  const _start=startExam;startExam=function(items,min){_start(items,min);$("m-body").querySelector(".exambar")?.insertAdjacentHTML("afterend",`<p class="cheatwarn sm">🔒 Bleib in der App, sonst Note 7.</p>`)};
+}
 drawDir();renderCats();renderStat();drawHome();
 const deep=TESTS.find(t=>"#"+t.id===location.hash);
 if(deep)openTest(deep);
