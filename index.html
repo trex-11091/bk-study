@@ -3084,53 +3084,70 @@ const RW=(()=>{
   };
   let s=loadLocal(acct?KA:K);
   const saveLocal=()=>{try{const{sig,...rest}=s;localStorage.setItem(acct?KA:K,JSON.stringify({...rest,sig:sign(rest)}))}catch(e){}};
-  /* Konto: Spielstand auf dem Server */
-  let pushT=null,pushing=false;
+  /* Konto: Der Server rechnet die XP. Die Seite schickt nur Ereignisse (Aufgabe richtig, Probe-KA fertig …). */
+  let sending=false,flushT=null;
+  const Q=()=>acct.q||(acct.q=[]);
   async function api(path,method="GET",body,keep){
     const r=await fetch(API+path,{method,keepalive:!!keep,headers:{"Content-Type":"application/json",...(acct?{Authorization:"Bearer "+acct.token}:{})},body:body?JSON.stringify(body):undefined});
     const j=await r.json().catch(()=>({}));return{r,j};
   }
-  function adopt(j){s=fresh(j.state);acct.rev=j.rev;acct.paid=j.paid||0;acct.dirty=0;saveAcct();saveLocal();panel()}
+  function adopt(j,celebrate){
+    const bL=lvlOf(s.xp),bB=new Set(Object.keys(s.badges||{})),bG=!!(s.goals||{})[today()];
+    s=fresh(j.state);acct.rev=j.rev;acct.paid=j.paid||0;saveAcct();saveLocal();panel();
+    if(!celebrate)return;
+    const shown=new Set();
+    (j.results||[]).forEach(r=>{
+      if(r.xp>0)toast(`<b>+${r.xp} XP</b> ${r.why}`);
+      else if(r.xp<0)toast(`<b>${r.xp} XP</b> ${r.why}`);
+      else if(r.limit&&!shown.has(r.limit)){shown.add(r.limit);toast(r.limit==="day"?`Tageslimit erreicht (300 XP). Morgen geht's weiter!`:r.limit==="rep"?`Wiederholungs-Limit für heute erreicht (${REP_CAP} XP).`:r.limit==="speed"?"Zu schnell! Antworten im Sekundentakt zählen nicht.":r.why)}
+    });
+    if(!bG&&s.goals[today()])setTimeout(()=>{toast("🎉 <b>Tagesziel geschafft!</b>","gold");confetti(90)},500);
+    BADGES.forEach(([id,e,name],i)=>{if(s.badges[id]&&!bB.has(id))setTimeout(()=>{toast(`${e} <b>Abzeichen:</b> ${name}`,"gold");confetti(70)},800+i*60)});
+    const aL=lvlOf(s.xp);
+    if(aL>bL){const gain=s.tampered?0:cents(aL)-cents(bL);setTimeout(()=>modal(gain?"💰":"🚀",`Level ${aL}!`,`Du bist jetzt <b>${lvlInfo(s.xp).title}</b>.${gain?` Du hast <b>+${gain} ct Guthaben</b> bekommen, jetzt hast du ${euro(cents(aL))}.`:" Weiter so!"}`),400)}
+  }
   function kicked(msg){acct=null;saveAcct();s=loadLocal(K);panel();if(msg)modal("🔒","Abgemeldet",msg,true)}
-  async function push(keep,imp){
-    if(!acct||pushing)return;pushing=true;clearTimeout(pushT);
+  function send(ev,now){if(!acct)return;Q().push(ev);saveAcct();panel();clearTimeout(flushT);flushT=setTimeout(()=>flush(),now?0:400)}
+  async function flush(keep){
+    if(!acct||sending||!Q().length)return;sending=true;
+    const batch=Q().splice(0,50);saveAcct();
     try{
-      const{sig,...st}=s,{r,j}=await api("/state","PUT",{state:st,rev:acct.rev,import:imp?1:0},keep);
-      if(r.ok){acct.rev=j.rev;acct.paid=j.paid||0;acct.dirty=0;saveAcct();panel()}
-      else if(r.status===409){adopt(j);toast("🔄 Stand vom Konto übernommen")}
-      else if(r.status===401||r.status===403)kicked(j.error||"Bitte melde dich neu an.");
-    }catch(e){/* offline: später nochmal */}
-    pushing=false;
+      const{r,j}=await api("/events","POST",{events:batch},keep);
+      if(r.ok){adopt(j,true);if(j.rejected&&batch.some(e=>e.type==="exam"))toast("Diese Probe-KA wurde nicht gewertet (zu kurz oder nicht richtig gestartet).")}
+      else if(r.status===401||r.status===403){kicked(j.error||"Bitte melde dich neu an.")}
+      else if(r.status>=500||r.status===0){acct.q=batch.concat(Q());saveAcct()}
+    }catch(e){if(acct){acct.q=batch.concat(Q());saveAcct()}}
+    sending=false;
+    if(acct&&Q().length)setTimeout(()=>flush(),1500);
   }
   async function pull(){
     if(!acct)return;
+    if(Q().length)return flush();
     try{
       const{r,j}=await api("/state");
       if(r.status===401||r.status===403)return kicked(j.error||"Bitte melde dich neu an.");
       if(!r.ok)return;
-      acct.name=j.name;acct.paid=j.paid||0;
-      if(acct.dirty&&j.rev===acct.rev)return push();
-      adopt(j);drawHome&&document.getElementById("home")&&!document.getElementById("home").hidden&&drawHome();
+      acct.name=j.name;adopt(j,false);
+      document.getElementById("home")&&!document.getElementById("home").hidden&&drawHome();
     }catch(e){}
   }
-  const save=()=>{saveLocal();if(acct){acct.dirty=1;saveAcct();clearTimeout(pushT);pushT=setTimeout(()=>push(),2500)}};
-  addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden"&&acct&&acct.dirty)push(true)});
-  addEventListener("online",()=>acct&&acct.dirty&&push());
-  setInterval(()=>{if(acct&&document.visibilityState==="visible")acct.dirty?push():pull()},60000);
+  const save=()=>saveLocal();
+  addEventListener("visibilitychange",()=>{if(document.visibilityState==="hidden"&&acct&&Q().length)flush(true)});
+  addEventListener("online",()=>acct&&flush());
+  setInterval(()=>{if(acct&&document.visibilityState==="visible")pull()},60000);
   save();
   async function login(l,p){
     const r=await fetch(API+"/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({login:l,password:p})});
     const j=await r.json().catch(()=>({}));
     if(!r.ok)throw new Error(j.error||"Anmelden ging nicht.");
-    const guest=s;acct={token:j.token,name:j.name,rev:0,paid:0,dirty:0};saveAcct();
+    acct={token:j.token,name:j.name,rev:0,paid:0,q:[]};saveAcct();
     const g=await api("/state");
     if(!g.r.ok){acct=null;saveAcct();throw new Error(g.j.error||"Konto konnte nicht geladen werden.")}
-    if(g.j.rev===0&&!g.j.state.xp&&guest.xp>0&&!guest.tampered){s=guest;acct.rev=0;saveLocal();await push(false,true)}
-    else adopt(g.j);
-    panel();drawHome();toast(`👋 <b>Hi ${j.name.replace(/</g,"")}!</b> Dein Fortschritt wird jetzt im Konto gespeichert.`,"gold");
+    adopt(g.j,false);
+    panel();drawHome();toast(`👋 <b>Hi ${j.name.replace(/</g,"")}!</b> Ab jetzt sammelst du XP in deinem Konto.`,"gold");
   }
   async function logout(){
-    if(acct&&acct.dirty)await push();
+    await flush();
     try{await api("/logout","POST")}catch(e){}
     try{localStorage.removeItem(KA)}catch(e){}
     acct=null;saveAcct();s=loadLocal(K);panel();drawHome();
@@ -3230,7 +3247,7 @@ const RW=(()=>{
     const li=lvlInfo(s.xp),st=streakNow(),dx=s.days[today()]||0,got=BADGES.filter(b=>s.badges[b[0]]).length;
     const c=s.tampered||!acct?0:cents(li.L),next=PAY.find(p=>li.L<p[0]),paid=acct?acct.paid||0:0;
     let open=false,popen=false;try{open=localStorage.getItem("rwBadgesOpen")==="1";popen=localStorage.getItem("rwPayOpen")==="1"}catch(e){}
-    el.innerHTML=`<div class="rw-acct">${acct?`<span>👤 <b>${String(acct.name||"").replace(/</g,"&lt;")}</b>${acct.dirty?' <small title="wird gleich gespeichert">· speichert …</small>':' <small>· im Konto gespeichert ✓</small>'}</span><button type="button" class="linkbtn" id="rw-out">Abmelden</button>`
+    el.innerHTML=`<div class="rw-acct">${acct?`<span>👤 <b>${String(acct.name||"").replace(/</g,"&lt;")}</b>${(acct.q&&acct.q.length)?' <small title="wird gleich gespeichert">· speichert …</small>':' <small>· im Konto gespeichert ✓</small>'}</span><button type="button" class="linkbtn" id="rw-out">Abmelden</button>`
         :`<span>Ohne Konto bleibt dein Fortschritt nur auf diesem Gerät.</span>`}</div>
       <div class="rw-top">
         <div class="lvl" style="--p:${li.p}" title="Level ${li.L}"><b>${li.L}</b></div>
@@ -3287,6 +3304,7 @@ const RW=(()=>{
   const answered=()=>{lastAns=Date.now()};
   setInterval(()=>{
     if(document.visibilityState!=="visible"||Date.now()-lastAns>90000)return;
+    if(acct)return send({type:"min"});
     const d=today();s.mins[d]=(s.mins[d]||0)+1;saveLocal();
   },60000);
   /* Wiederholen: XP nur für richtig beantwortete Sachen, die man schon kannte; je Sache einmal am Tag, zusammen höchstens REP_CAP am Tag */
@@ -3300,13 +3318,14 @@ const RW=(()=>{
 
   return{
     panel,confetti,toast,loginDialog,
-    task(tid,id,typed){const t=TESTS.find(x=>x.id===tid),n=t&&t.tasks?t.tasks.reduce((a,g)=>a+g.items.length,0):0;if(!(/^\d+$/.test(String(id))&&+id<n))return;answered();const k=tid+":"+id;if(s.seen[k]){if(typed)repeatXP("t:"+k,2,"Wiederholt",tid);return}s.seen[k]=1;s.correct++;add(typed?10:5,typed?"Aufgabe richtig":"Aufgabe geschafft",tid)},
-    word(prefix,id,quiz){if(!ALL.some(w=>w.id===id))return;answered();const k="w:"+prefix+id;if(s.seen[k]){if(quiz)repeatXP(k,1,"Vokabel wiederholt",prefix?"englisch-kt":"spanisch");return}s.seen[k]=1;s.words++;add(3,"Vokabel sitzt",prefix?"englisch-kt":"spanisch")},
-    vtest(pct,tid){answered();
+    examStart(tid){if(acct)send({type:"exam_start",tid},true)},
+    task(tid,id,typed){if(acct){answered();return send({type:"task",tid,id:+id,typed:!!typed})}const t=TESTS.find(x=>x.id===tid),n=t&&t.tasks?t.tasks.reduce((a,g)=>a+g.items.length,0):0;if(!(/^\d+$/.test(String(id))&&+id<n))return;answered();const k=tid+":"+id;if(s.seen[k]){if(typed)repeatXP("t:"+k,2,"Wiederholt",tid);return}s.seen[k]=1;s.correct++;add(typed?10:5,typed?"Aufgabe richtig":"Aufgabe geschafft",tid)},
+    word(prefix,id,quiz){if(!ALL.some(w=>w.id===id))return;if(acct){answered();return send({type:"word",tid:prefix?"englisch-kt":"spanisch",id,quiz:!!quiz})}answered();const k="w:"+prefix+id;if(s.seen[k]){if(quiz)repeatXP(k,1,"Vokabel wiederholt",prefix?"englisch-kt":"spanisch");return}s.seen[k]=1;s.words++;add(3,"Vokabel sitzt",prefix?"englisch-kt":"spanisch")},
+    vtest(pct,tid){answered();if(acct)return send({type:"vtest",tid,pct},true);
       const k=tid+":"+today();if(s.vt[k]){toast("Vokabeltest heute schon gewertet, morgen gibt's wieder XP");return}
       s.vt[k]=1;add(Math.max(2,Math.round(pct/5)),`Vokabeltest ${pct} %`,tid);if(pct>=90)confetti(120);
     },
-    exam(tid,note,pct){answered();
+    exam(tid,note,pct){answered();if(acct){if(note<=2)setTimeout(()=>confetti(note===1?260:160),200);return send({type:"exam",tid,note,pct},true)}
       s.exams++;const old=s.best[tid];
       const xp=[0,100,70,50,30,15,15][note];
       let give;
@@ -3318,6 +3337,7 @@ const RW=(()=>{
       if(note<=2)setTimeout(()=>confetti(note===1?260:160),200);
     },
     cheat(tid){
+      if(acct){const lost=Math.min(s.xp,PENALTY);send({type:"cheat",tid},true);return lost}
       touchDay();s.cheats++;const lost=Math.min(s.xp,PENALTY);s.xp-=lost;s.tests[tid]=1;save();panel();
       return lost;
     },
@@ -3405,7 +3425,7 @@ const FACH_COL={"Englisch":["#3b82f6","#06b6d4"],"Mathe":["#8b5cf6","#ec4899"],"
   let bt;addEventListener("blur",()=>{if(!live())return;clearTimeout(bt);bt=setTimeout(()=>{if(live()&&!document.hasFocus())caught("anderes Fenster geöffnet")},1500)});
   const WARN=`<p class="cheatwarn">🔒 <b>Anti-Schummel:</b> Verlässt du während der Probe-KA die App (anderer Tab, andere App, KI fragen, Handy sperren), ist sie sofort vorbei: <b>Note 7</b> und <b>−150 XP</b>.</p>`;
   const _intro=drawExamIntro;drawExamIntro=function(){_intro();$("m-body").querySelector(".card")?.insertAdjacentHTML("beforeend",WARN)};
-  const _start=startExam;startExam=function(items,min){_start(items,min);$("m-body").querySelector(".exambar")?.insertAdjacentHTML("afterend",`<p class="cheatwarn sm">🔒 Bleib in der App, sonst Note 7.</p>`)};
+  const _start=startExam;startExam=function(items,min){_start(items,min);RW.examStart(mt.id);$("m-body").querySelector(".exambar")?.insertAdjacentHTML("afterend",`<p class="cheatwarn sm">🔒 Bleib in der App, sonst Note 7.</p>`)};
 }
 drawDir();renderCats();renderStat();drawHome();
 const deep=TESTS.find(t=>"#"+t.id===location.hash);
